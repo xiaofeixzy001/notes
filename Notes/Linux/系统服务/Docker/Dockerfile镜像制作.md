@@ -1,10 +1,10 @@
 [TOC]
 
-# 镜像制作
+# 手动制作镜像
 
 个人理解类似虚拟机的快照
 
-## 手动制作yum版nginx镜像
+## 制作yum版nginx镜像
 
 Docker制作类似于虚拟机的镜像制作，即按照公司的实际业务务求将需要安装的软件、相关配置等基础环境配置完成，然后将其做成镜像，最后再批量从镜像批量生产实例，这样可以极大的简化相同环境的部署工作，Docker的镜像制作分为手动制作和自动制作(基于DockerFile)，其中手动制作镜像步骤具体如下：
 
@@ -12,7 +12,7 @@ Docker制作类似于虚拟机的镜像制作，即按照公司的实际业务�
 
 基于某个基础镜像之上重新制作，因此需要先有一个基础镜像，本次使用官方提供的centos镜像为基础：
 
-```
+```shell
 # 先制作一个基础镜像centos-base，安装一些常用软件，做一些优化。
 docker pull centos:latest
 docker images
@@ -32,7 +32,7 @@ docker commit -m "mynginx" 9e0c9d668f70 mynginx:v1
 
  2,yum安装并配置Nginx
 
-```
+```shell
 [root@9e0c9d668f70 ~]# yum install -y nginx pcre pcre-devel zlib zlib-devel openssl openssl-devel 
 [root@9e0c9d668f70 ~]# vim /etc/nginx/nginx.conf
 """
@@ -54,7 +54,7 @@ docker yum nginx
 
 提交为镜像(保存)
 
-```
+```shell
 # 在本地(宿主机)操作,基于容器ID提交为镜像,名字为mynginx:v1
 docker images
 docker commit -m "mynginx" 9e0c9d668f70 mynginx:v1
@@ -68,7 +68,7 @@ docker commit -m "mynginx" 9e0c9d668f70 mynginx:v1
 
 4,以自定义的镜像启动一个容器
 
-```
+```shell
 docker run -d -p 80:80 --name mynginx:v1 mynginx:v1 /usr/sbin/nginx
 ss -tnlp
 curl http://172.16.2.1/
@@ -76,11 +76,11 @@ curl http://172.16.2.1/
 
  
 
-## 手动制作编译版本的nginx镜像
+## 制作编译版本的nginx镜像
 
 过程为在centos 基础镜像之上手动编译安装nginx，然后再提交为镜像
 
-```
+```shell
 [root@docker-server1 opt]# docker run -it centos /bin/bash
 [root@fc9179085ce9 /]# yum install wget lrzsz -y
 [root@fc9179085ce9 /]# rm -rf /etc/yum.repo.d/*
@@ -158,9 +158,547 @@ daemon off; #关闭后台运行
 
 最后面的nginx是运行的命令CMD，即镜像里面要运行一个nginx命令，所以才有了前面将/apps/nginx/sbin/nginx软连接到/usr/sbin/nginx，目的就是为了让系统可以执行此命令。
 
-## DockerFile制作镜像
+# DockerFile
 
 DockerFile可以说是一种可以被Docker程序解释的脚本，DockerFile是由一条条的命令组成的，每条命令对应linux下面的一条命令，Docker程序将这些DockerFile指令再翻译成真正的linux命令，其有自己的书写方式和支持的命令，Docker程序读取DockerFile并根据指令生成Docker镜像，相比手动制作镜像的方式，DockerFile更能直观的展示镜像是怎么产生的，有了DockerFile，当后期有额外的需求时，只要在之前的DockerFile添加或者修改响应的命令即可重新生成新的Docke镜像，避免了重复手动制作镜像的麻烦。
+
+## 语法格式
+
+DockerFile
+
+```dockerfile
+# 注释信息
+命令 参数
+```
+
+.dockeringore
+
+打包时忽略此文件定义的路径
+
+## 执行
+
+```shell
+docker build --help
+docker build [OPTIONS] Dockerfile_path
+```
+
+OPTIONS:
+
+-t：设置标签
+
+--build-args：构建时传递变量参数
+
+```shell
+cat Dockerfile
+"""
+FROM nginx:1.14-alpine
+ARG author="Magedu <mage@magedu.com>"
+LABEL maintainer=${author} 
+"""
+
+# 构建镜像
+docker build -t mywebtest:v1 ./
+docker image inspect mywebtest:v1
+
+# 传参
+docker build -t mywebtest:v2 --build-arg "author=Tom <123@qq.com>" ./
+docker image inspect mywebtest:v2
+```
+
+
+
+## FROM
+
+FROM指令必须为第一个非注释行，指定构建过程的基准镜像，后续指定均已此基准镜像环境。
+
+```Dockerfile
+FROM <repository>[:<tag>]
+FROM <repository>@<tag>
+```
+
+repository：指定作为base image的名称
+
+tag：base image的标签，默认latest
+
+例如：
+
+```dockerfile
+ # Test Img
+ FROM busybox:latest
+```
+
+
+
+## MAINTANIER(depreacted)
+
+用于让Dockerfile制作者提供本人详细信息
+
+通常放置于FROM指令之后
+
+```dockerfile
+MAINTANIER "AUTH_NAME <AUTH_EMAIL>"
+```
+
+例如：
+
+```dockerfile
+ # Test Img
+ FROM busybox:latest
+ MAINTANIER "magedu <magedu@magedu.com>"
+```
+
+
+
+## LABEL
+
+替代MAINTANIER指令，指定镜像元数据信息
+
+```dockerfile
+LABEL <KEY1>=<VAL1> <KEY2>=<VAL2> ...
+```
+
+例如：
+
+```dockerfile
+# Test Img
+FROM busybox:latest
+MAINTANIER "magedu <magedu@magedu.com>"
+LABEL maintainer="magedu <magedu@magedu.com>"
+```
+
+
+
+## COPY
+
+从Docker主机复制文件至创建的新镜像文件
+
+```dockerfile
+COPY SRC DST
+COPY ["SRC", ..., "DST"]
+```
+
+SRC通常是build上下文中的路径；
+
+如果SRC是目录，则递归复制其内部文件和目录，不会复制本身；
+
+如果有多个SRC，则DST必须是目录且以根/结尾；
+
+如果DST不存在，则会被自动创建，包括其父目录；
+
+例如：
+
+```dockerfile
+# Test Img
+FROM busybox:latest
+#MAINTANIER "magedu <magedu@magedu.com>"
+LABEL maintainer="magedu <magedu@magedu.com>"
+COPY index.html /data/web/html
+COPY yum.repos.d /etc/yum.repos.d/
+```
+
+index.html文件和yum.repos.d目录在当前目录中需要事先存在，当前目录为Dockerfile所在目录或子目录。
+
+## ADD
+
+类似于COPY，ADD支持使用TAR文件和URL路径
+
+```dockerfile
+COPY SRC DST
+COPY ["SRC", ..., "DST"]
+```
+
+SRC为URL且DST不以根/结尾，则SRC指定的文件将被下载并创建为DST；如果DST以根/结尾，则下载并保存为DST/filename；
+
+SRC如果为TAR压缩文件，则将会被展开为目录，同`tar -x`，但如果是URL的压缩文件则不会自动展开；
+
+如果有多个SRC，则DST必须是目录且以根/结尾，如果不是根结尾，则SRC内容将被直接写入到DST；
+
+例如：
+
+```dockerfile
+# Test Img
+FROM busybox:latest
+#MAINTANIER "magedu <magedu@magedu.com>"
+LABEL maintainer="magedu <magedu@magedu.com>"
+COPY index.html /data/web/html
+COPY yum.repos.d /etc/yum.repos.d/
+#ADD http://nginx.org/download/nginx-1.15.2.tar.gz /usr/local/src/
+ADD nginx-1.15.2.tar.gz /usr/local/src/
+```
+
+
+
+## WORKDIR
+
+用于为Dockerfile中所有的RUN,CMD,ENTRYPOINT,COPY,ADD等指令设定工作目录。
+
+示例
+
+```dockerfile
+# Test Img
+FROM busybox:latest
+LABEL maintainer="magedu <magedu@magedu.com>"
+COPY index.html /data/web/html
+WORKDIR /usr/local/
+ADD nginx-1.15.2.tar.gz ./src/
+```
+
+
+
+## VOLUME
+
+镜像挂载本地目录
+
+```dockerfile
+VOLUME <mountpoint>
+VOLUME ["mountpoint"]
+```
+
+如果挂载点已挂载了其他点，则在docker run时会合并。
+
+示例
+
+```dockerfile
+# Test Img
+FROM busybox:latest
+LABEL maintainer="magedu <magedu@magedu.com>"
+COPY index.html /data/web/html
+WORKDIR /usr/local/
+ADD nginx-1.15.2.tar.gz ./src/
+VOLUME /data/mysql/
+```
+
+
+
+## EXPOSE
+
+打开待监听端口，但不会直接暴漏，在``docker run`的时候可以通过-P来暴漏端口，可通过`docke port NAME`查看验证。
+
+```dockerfile
+EXPOSE PORT[/protocol] [PORT/protocol] ...
+```
+
+示例
+
+```shell
+cat Dockerfile
+'''
+# Test Img
+FROM busybox:latest
+LABEL maintainer="magedu <magedu@magedu.com>"
+COPY index.html /data/web/html
+WORKDIR /usr/local/
+ADD nginx-1.15.2.tar.gz ./src/
+VOLUME /data/mysql/
+EXPOSE 80/tcp
+'''
+
+docker build -t webtest:v1 ./
+docker run --name webtest01 --rm webtest:v1 /bin/httpd -f -h /data/web/html
+docker port webtest01
+docker run --name webtest01 -P --rm webtest:v1 /bin/httpd -f -h /data/web/html
+docker port webtest01
+```
+
+
+
+## ENV
+
+定义镜像内的环境变量，在制作时(build)定义的变量，可被Dockerfile文件中后面的指令说调用。
+
+```dockerfile
+# 定义
+ENV KEY VALUE  # 只能设置一个变量
+ENV KEY=VALUE  # 可以设置多个变量
+# 调用
+${KEY}
+```
+
+${KEY:-DEFAULT}：如果变量未定义，默认DEFAULT
+
+${KEY:+DEFAULT}：如果变量有定义，返回DEFAULT
+
+支持反斜线\转义和换行
+
+示例
+
+```shell
+cat Dockerfile
+'''
+# Test Img
+FROM busybox:latest
+LABEL maintainer="magedu <magedu@magedu.com>"
+ENV DOC_ROOT=/data/web/html/
+COPY index.html ${DOC_ROOT}
+WORKDIR /usr/local/
+ADD nginx-1.15.2.tar.gz ./src/
+VOLUME /data/mysql/
+EXPOSE 80/tcp
+'''
+
+docker build -t webtest:v1 ./
+docker run --name webtest01 --rm -P webtest:v1 ls /data/web/html/
+docker run --name webtest01 --rm -P webtest:v1 printenv
+docker run --name webtest01 -rm -P -e DOC_ROOT="/data/webroot/" webtest:v1 printenv
+```
+
+注意：
+
+docker run -e ：变量传值，运行容器时传值
+
+## RUN
+
+用于指定docker build过程中运行的程序，可以是任何镜像所支持的命令
+
+```dockerfile
+RUN CMD
+RUN ["CMD1","ARG1","CMD2","ARG2",...]
+```
+
+第一种格式中，CMD通常是一个shell命令，且以`/bin/sh -c`来运行它，意味着此进程在容器中PID不为1,不能接受Unix信号，因此`docker stop`接收不到SIGTERM信号。
+
+第二种语法，是JSON格式的数组，其中ARG是传递给CMD命令的选项或参数，直接由内核创建，不会以`/bin/sh -c`来发起创建，因此常见的bash语法都不会再支持，如通配符等。当然如果希望以第二种语法来以`/bin/sh -c`创建命令，可以写成`RUN ["/bin/sh","-c","CMD1","ARG1"]`.
+
+## CMD
+
+类似于RUN指令，二者运行的时间点不同。
+
+RUN指令运行于镜像文件构建过程中，CMD指令运行于基于构建出来的镜像启动容器时`docker run`；
+
+CMD指令首要目的在于为启动的容器指定默认运行的程序，并且运行结束后容器也将终止；
+
+CMD指令的命令可被`docker run -e`所覆盖；
+
+在Dockerfile中可存在多个CMD，但仅最后一个会生效。
+
+```dockerfile
+CMD CMD
+CMD ["CMD1","ARG1","CMD2","ARG2",...]
+CMD ["ARG1","ARG2",...]
+```
+
+前两种语法格式意义相同，第三种则为ENTRYPOINT指令提供默认参数。
+
+示例：
+
+```shell
+cat Dockerfile
+'''
+# Test Img
+FROM busybox
+LABEL maintainer="MageEdu <magedu@magedu.com>" app="httpd"
+ENV DOC_ROOT="/data/web/html"
+
+RUN mkdir -p ${DOC_ROOT} && \
+    echo "<h1>Busybox httpd server.<h1>" > ${DOC_ROOT}/index.html
+
+#CMD /bin/httpd -f -h ${DOC_ROOT}  # 以/bin/sh启动此命令,运行为shell的子进程
+CMD ["/bin/httpd","-f","-h ${DOC_ROOT}"]  # 不会运行为/bin/sh的子进程
+#CMD ["/bin/sh","-c","/bin/httpd","-f","-h ${DOC_ROOT}"]
+'''
+
+docker build -t httpd:v1 ./
+docker inspect httpd:v1
+docker run --name h1 -it --rm -P httpd:v1  # 报错${DOC_ROOT} NO SUCH FILE OR DIRECTORY
+```
+
+
+
+## ENTRYPOINT
+
+类似CMD指令，用于为容器指定默认运行程序，从而使得容器像是一个单独的可执行程序。
+
+与CMD不同的是，由ENTRYPOINT启动的程序不会被`docker run -e CMD`指定的参数所覆盖，并且CMD会被当做参数传递给ENTRYPOINT指定的程序。
+
+当然，可以使用`docker run --entrypoint CMD`可覆盖ENTRYPOINT指令程序。
+
+```dockerfile
+ENTRYPOINT CMD
+ENTRYPOINT ["CMD1","ARG1","ARG2",...]
+```
+
+可存在多个ENTRYPOINT，但只有最后一个生效。
+
+示例：
+
+```shell
+cat Dockerfile
+'''
+# Test Img
+FROM busybox
+LABEL maintainer="MageEdu <magedu@magedu.com>" app="httpd"
+ENV DOC_ROOT="/data/web/html"
+
+RUN mkdir -p ${DOC_ROOT} && \
+    echo "<h1>Busybox httpd server.<h1>" > ${DOC_ROOT}/index.html
+
+CMD ["/bin/httpd","-f","-h ${DOC_ROOT}"]
+ENTRYPOINT ["/bin/sh","-c"] 
+'''
+
+docker build -t httpd:v2 ./
+docker inspect httpd:v2
+docker run --name h1 -it --rm -P httpd:v2
+docker run --name h1 -it --rm -P httpd:v2 ls /data/web/html
+```
+
+如果CMD和ENTRYPOINT同时存在，则CMD后面指令将被当做参数传递给ENTRYPOINT指令
+
+应用：通过docker run 传递命令参数来指定容器监听的端口，目录等
+
+```shell
+cat Dockerfile
+'''
+# Test Img
+FROM nginx:1.14-alpine
+LABEL maintainer="MageEdu <magedu@magedu.com>"
+
+ENV NGX_DOC_ROOT="/data/web/html"
+ADD index.html ${NGX_DOC_ROOT}
+ADD entrypoint.sh /bin/
+
+CMD ["/usr/sbin/nginx","-g","daemon off;"]
+ENTRYPOINT ["/bin/entrypoint.sh"] 
+'''
+
+cat entrypoint.sh
+"""
+#!/bin/sh
+cat > /etc/nginx/conf.d/www.conf <<EOF
+server {
+	server_name ${HOSTNAME};
+	listen ${IP:-0.0.0.0}:${PORT:-80};
+	root ${NGX_DOC_ROOT:-/usr/share/nginx/html}
+}
+EOF
+exec "$@"
+"""
+
+cat index.html
+"""
+<h1>Hello,Nginx!!</h1>
+"""
+
+docker build -t nginxweb:v1 ./
+docker run --name myweb01 --rm -P nginxweb:v1
+docker run --name myweb01 --rm -P -e "PORT=8080" nginxweb:v1
+```
+
+
+
+## USER
+
+指定运行镜像或运行Dockerfile中各指令时的用户名或UID，默认root用户。
+
+```dockerfiler
+USER UID|USERNAME
+```
+
+注意：UID或USERNAME必须为/etc/passwd中已存在，否则docker run将执行失败。
+
+## HEALTHCHECK
+
+健康状态检测
+
+```dockerfile
+HEALTHCHECK [OPTIONS] CMD command
+HEALTHCHECK NONE
+```
+
+OPTIONS：
+
+--interval=DURATION(default:30s)：每隔多久探测一次
+
+--timeout=DURATION(default:30s)：服务器响应超时时长
+
+--start-period=DURATION(default:0s)：什么时候开始探测，针对服务进程启动比较慢的情况
+
+--retries=N(default:3)：重试检查次数
+
+返回值：
+
+0：健康
+
+1：不健康
+
+2：自定义
+
+```dockerfile
+HEALTHCHECK --interval=5m --timeout=3s \
+    CMD wget -O - -q http://${IP:-0.0.0.0}:${PORT:-80}/ || exit 1
+```
+
+示例：
+
+```shell
+cat Dockerfile
+'''
+FROM nginx:1.14-alpine
+
+LABEL maintainer="MageEdu <123@123.com>"
+
+ENV NGX_DOC_ROOT="/data/web/html/"
+
+ADD index.html ${NGX_DOC_ROOT}
+ADD entrypoint.sh /bin/
+
+EXPOSE 80/tcp
+
+HEALTHCHECK --start-period=3s CMD wget -O - -q http://${IP:-0.0.0.0}:${PORT:-80}/
+
+CMD ["/usr/sbin/nginx","-g","daemon off;"]
+
+ENTRYPOINT ["/bin/entrypoint.sh"]
+'''
+
+cat entrypoint.sh
+"""
+#!/bin/sh
+cat > /etc/nginx/conf.d/www.conf <<EOF
+server {
+	server_name ${HOSTNAME};
+	listen ${IP:-0.0.0.0}:${PORT:-80};
+	root ${NGX_DOC_ROOT:-/usr/share/nginx/html}
+}
+EOF
+exec "$@"
+"""
+
+cat index.html
+"""
+<h1>Hello,Nginx!!</h1>
+"""
+
+docker build -t nginxweb:v3 ./
+docker run --name myweb01 --rm -P nginxweb:v3
+docker run --name myweb01 --rm -P -e "PORT=8080" nginxweb:v1
+```
+
+
+
+## ONBUILD
+
+用于定义一个触发器，当被用于基础镜像制作另一个镜像时，就会触发ONBUILD指令。
+
+```dockerfile
+ONBUILD <INSTRUCTION>
+```
+
+第一级镜像mynginxtest:v1：FROM nginx:1.14-alpine
+
+第二级镜像：FROM mynginxtest:v1
+
+ONBUILD不能自我嵌套，且不会触发FROM和MAINTAINER指令；
+
+使用包含ONBUILD指令的Dockerfile构建的镜像应使用特殊的标签，如ruby:2.0-onbuild；
+
+在ONBUILD指令中使用ADD和COPY指令时要特别小心，构建时可能会因为上下文缺少源文件导致构建失败。
+
+
+
+
+
+# Dockerfile制作镜像
 
 应用场景：假设我们需要一个最小化的系统centos，然后安装常用软件工具，配置好常用环境，此为第二版的系统centos-base，然后在此基础上继续操作，如下图所示：
 
@@ -188,9 +726,9 @@ dockerfile/
 
   └── tomcat
 
- 
+准备环境
 
-```
+```shell
 docker pull centos
 docker images
 mkdir -pv /opt/dockerfile/{web/{nginx,tomcat,jdk,apache},system/{centos,ubuntu,redhat}}
@@ -199,9 +737,9 @@ tree -L 2 dockerfile/
 
 
 
-### Dockerfile制作Nginx镜像 
+## 制作Nginx镜像
 
-cat Dockerfile
+Dockerfile
 
 ```dockerfile
 # Nginx Image
@@ -237,7 +775,7 @@ CMD ["/usr/local/nginx/sbin/run_nginx.sh"]
 
 cat run_nginx.sh
 
-```
+```shell
 #!/bin/bash
 #
 /usr/local/nginx/sbin/nginx
@@ -247,7 +785,7 @@ tail -f /usr/local/nginx/log/access.log
 
 cat build-command.sh 
 
-```
+```shell
 #!/bin/bash
 #
 docker build -t centos7/nginx-base:v1 .
@@ -255,13 +793,13 @@ docker build -t centos7/nginx-base:v1 .
 
  启动测试
 
-```
+```shell
 docker run -it -p 8001:80 centos7/nginx-base:v1
 ```
 
 http://19.87.100.101:8001
 
-### Dockerfile制作mysql镜像
+## 制作mysql镜像
 
 构建的原理：
 
@@ -271,13 +809,13 @@ http://19.87.100.101:8001
 
 3，由于MySQL5.6和MySQL5.7的初始化方式不一样，本文介绍的适用于MySQL5.6（后面会有5.7的案例）
 
-### Dockerfile制作tomcat镜像 
+## 制作tomcat镜像
 
 基于上面创建的centos-base镜像构建JDK和tomcat镜像，先构建JDK镜像，然后再基于JDK镜像构建tomcat镜像，再构建2个tomcat业务实例镜像app01和app02
 
 1,构建JDK镜像
 
-```
+```shell
 cd /opt/dockerfile/system/centos
 mkdir jdk-base
 cd jdk-base/
@@ -310,7 +848,7 @@ RUN rm -rf /etc/localtime && ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/loca
 
 profile文件最后添加：
 
-```
+```shell
 export JAVA_HOME=/usr/local/jdk
 export TOMCAT_HOME=/apps/tomcat
 export PATH=$JAVA_HOME/bin:$JAVA_HOME/jre/bin:$TOMCAT_HOME/bin:$PATH
@@ -323,7 +861,7 @@ https://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.
 
 然后执行构建：
 
-```
+```shell
 ls
 """
 Dockerfile  jdk-8u162-linux-x64.tar.gz  profile
@@ -347,7 +885,7 @@ java -version
 
 下载地址：https://tomcat.apache.org/download-80.cgi
 
-```
+```shell
 mkdir tomcat8-base
 ls
 """
@@ -394,7 +932,7 @@ docker images
 
 在生产环境中，tomcat的web页面路径一般会修改，通过conf/server.xml
 
-```
+```shell
 mkdir tomcat8-app{01,02} -pv
 cd tomcat8-app01/
 cat Dockerifle
@@ -457,13 +995,13 @@ docker run -it -p 8889:8080 tomcat8-app02
 
 172.16.2.101:8889/myapp/
 
-### Dockerfile制作HAProxy镜像
+## 制作HAProxy镜像
 
 实验要求：
 
 haproxy负载代理至上面两个tomcat业务实例中去。
 
-```
+```shell
 mkdir haproxy
 cd haproxy/
 wget http://xxx/haproxy-1.8.12.tar.gz
